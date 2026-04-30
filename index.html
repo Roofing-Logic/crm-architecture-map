@@ -7,6 +7,41 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; height: 100vh; overflow: hidden; }
 
+  /* ── Login gate ── */
+  #login-gate {
+    position: fixed; inset: 0; z-index: 9999;
+    background: #0f172a;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #login-box {
+    background: #1e293b; border-radius: 16px; padding: 40px 36px;
+    width: 340px; box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    display: flex; flex-direction: column; align-items: center; gap: 20px;
+  }
+  #login-box .logo {
+    font-size: 28px; font-weight: 800; color: #fff; letter-spacing: -.5px;
+  }
+  #login-box .logo span { color: #3b82f6; }
+  #login-box p { font-size: 13px; color: #64748b; text-align: center; }
+  #login-box input {
+    width: 100%; padding: 11px 14px; border-radius: 8px;
+    border: 1.5px solid #334155; background: #0f172a;
+    color: #e2e8f0; font-size: 14px; outline: none;
+    transition: border-color .15s;
+  }
+  #login-box input:focus { border-color: #3b82f6; }
+  #login-box input.error { border-color: #ef4444; animation: shake .3s; }
+  #login-btn {
+    width: 100%; padding: 11px; border-radius: 8px; border: none;
+    background: #3b82f6; color: #fff; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: background .15s;
+  }
+  #login-btn:hover { background: #2563eb; }
+  #login-error { font-size: 12px; color: #ef4444; min-height: 16px; }
+  @keyframes shake {
+    0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)}
+  }
+
   /* ── Toolbar ── */
   #toolbar {
     position: fixed; top: 0; left: 0; right: 0; height: 52px;
@@ -168,6 +203,17 @@
 </style>
 </head>
 <body>
+
+<!-- Login gate -->
+<div id="login-gate">
+  <div id="login-box">
+    <div class="logo">Roofing<span>Logic</span></div>
+    <p>Architecture Map — Internal Tool</p>
+    <input type="password" id="pw-input" placeholder="Password" autocomplete="current-password" />
+    <div id="login-error"></div>
+    <button id="login-btn" onclick="checkPassword()">Enter</button>
+  </div>
+</div>
 
 <!-- Toolbar -->
 <div id="toolbar">
@@ -757,6 +803,34 @@ function pasteJSON() {
 // Enter key in modals
 document.getElementById('ef-title').addEventListener('keydown', e => { if (e.key === 'Enter') saveEdit(); });
 document.getElementById('lf-text').addEventListener('keydown',  e => { if (e.key === 'Enter') saveLabel(); });
+
+// ── Login gate ────────────────────────────────────────────────────
+(function() {
+  const PASS = 'Rebuild123!';
+  const gate = document.getElementById('login-gate');
+  const input = document.getElementById('pw-input');
+
+  if (sessionStorage.getItem('rl-auth') === '1') {
+    gate.style.display = 'none';
+    return;
+  }
+
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') checkPassword(); });
+  setTimeout(() => input.focus(), 100);
+
+  window.checkPassword = function() {
+    if (input.value === PASS) {
+      sessionStorage.setItem('rl-auth', '1');
+      gate.style.display = 'none';
+    } else {
+      document.getElementById('login-error').textContent = 'Incorrect password.';
+      input.classList.add('error');
+      input.value = '';
+      setTimeout(() => input.classList.remove('error'), 400);
+      input.focus();
+    }
+  };
+})();
 </script>
 </body>
 </html>
