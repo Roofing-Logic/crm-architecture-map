@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Roof CRM — Architecture Map</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; height: 100vh; overflow: hidden; }
+
+  /* ── Toolbar ── */
+  #toolbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 52px;
+    background: #1e293b; color: #e2e8f0;
+    display: flex; align-items: center; gap: 8px; padding: 0 16px;
+    z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  #toolbar h1 { font-size: 14px; font-weight: 700; color: #fff; margin-right: 12px; }
+  .tb-sep { width: 1px; height: 28px; background: #334155; margin: 0 4px; }
+  .tb-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 6px; border: none;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background .15s;
+  }
+  .tb-btn.primary   { background: #3b82f6; color: #fff; }
+  .tb-btn.secondary { background: #334155; color: #e2e8f0; }
+  .tb-btn.danger    { background: #ef4444; color: #fff; }
+  .tb-btn.success   { background: #22c55e; color: #fff; }
+  .tb-btn:hover { filter: brightness(1.15); }
+  .tb-btn:disabled { opacity: .4; cursor: default; filter: none; }
+  .tb-label { font-size: 11px; color: #94a3b8; margin-left: 4px; }
+  #mode-indicator {
+    margin-left: auto; font-size: 11px; font-weight: 600;
+    padding: 4px 10px; border-radius: 99px; background: #334155; color: #94a3b8;
+  }
+  #mode-indicator.arrow-mode { background: rgba(251,191,36,.15); color: #fbbf24; }
+
+  /* ── Canvas ── */
+  #canvas {
+    position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
+    overflow: hidden; cursor: default;
+  }
+  #world {
+    position: absolute; transform-origin: 0 0;
+  }
+  #svg-layer {
+    position: absolute; top: 0; left: 0; pointer-events: none;
+    overflow: visible;
+  }
+  #svg-layer.arrow-mode { pointer-events: all; cursor: crosshair; }
+
+  /* ── Nodes ── */
+  .node {
+    position: absolute; min-width: 140px; max-width: 260px;
+    border-radius: 12px; padding: 12px 16px;
+    border: 2px solid transparent;
+    cursor: grab; user-select: none;
+    box-shadow: 0 2px 12px rgba(0,0,0,.12);
+    transition: box-shadow .15s, border-color .15s;
+  }
+  .node:active { cursor: grabbing; }
+  .node.selected { border-color: #3b82f6 !important; box-shadow: 0 0 0 3px rgba(59,130,246,.25), 0 4px 16px rgba(0,0,0,.2); }
+  .node.arrow-start { border-color: #fbbf24 !important; box-shadow: 0 0 0 3px rgba(251,191,36,.3); }
+  .node-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .node-sub   { font-size: 11px; opacity: .75; line-height: 1.5; }
+  .node-badge {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 99px; margin-bottom: 6px;
+    background: rgba(0,0,0,.15); color: inherit;
+  }
+  .node-delete {
+    position: absolute; top: -8px; right: -8px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: #ef4444; color: #fff; border: 2px solid #fff;
+    font-size: 11px; font-weight: 700; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    z-index: 10; line-height: 1;
+  }
+  .node.selected .node-delete { display: flex; }
+
+  /* Node themes */
+  .theme-blue    { background: #dbeafe; color: #1e3a5f; border-color: #93c5fd; }
+  .theme-purple  { background: #ede9fe; color: #4c1d95; border-color: #c4b5fd; }
+  .theme-green   { background: #dcfce7; color: #14532d; border-color: #86efac; }
+  .theme-amber   { background: #fef3c7; color: #78350f; border-color: #fcd34d; }
+  .theme-orange  { background: #ffedd5; color: #7c2d12; border-color: #fdba74; }
+  .theme-cyan    { background: #cffafe; color: #164e63; border-color: #67e8f9; }
+  .theme-teal    { background: #ccfbf1; color: #134e4a; border-color: #5eead4; }
+  .theme-red     { background: #fee2e2; color: #7f1d1d; border-color: #fca5a5; }
+  .theme-slate   { background: #f1f5f9; color: #0f172a; border-color: #94a3b8; }
+  .theme-navy    { background: #1e3a5f; color: #e0f2fe; border-color: #3b82f6; }
+  .theme-stage   { background: #fff; color: #1e293b; border-color: #e2e8f0; }
+
+  /* ── Arrows ── */
+  .arrow-line { stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+  .arrow-line.selected-arrow { stroke-width: 3; }
+  .arrow-hit  { stroke: transparent; stroke-width: 14; fill: none; cursor: pointer; }
+  .arrow-label-bg { fill: #fff; rx: 4; }
+  .arrow-label-text { font-size: 11px; font-family: -apple-system, sans-serif; fill: #475569; font-weight: 600; }
+
+  /* ── Add node panel ── */
+  #add-panel {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #1e293b; border-radius: 12px; padding: 12px 16px;
+    display: flex; gap: 8px; align-items: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,.3); z-index: 100;
+  }
+  #add-panel .tb-btn { font-size: 11px; padding: 5px 10px; }
+
+  /* ── Edit modal ── */
+  #edit-modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
+    z-index: 2000; align-items: center; justify-content: center;
+  }
+  #edit-modal.open { display: flex; }
+  #edit-form {
+    background: #fff; border-radius: 12px; padding: 24px; width: 380px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.25);
+  }
+  #edit-form h3 { font-size: 14px; font-weight: 700; margin-bottom: 16px; color: #1e293b; }
+  #edit-form label { font-size: 11px; font-weight: 600; color: #475569; display: block; margin-bottom: 4px; margin-top: 12px; }
+  #edit-form input, #edit-form textarea, #edit-form select {
+    width: 100%; padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 7px;
+    font-size: 13px; font-family: inherit; color: #1e293b; outline: none;
+  }
+  #edit-form input:focus, #edit-form textarea:focus, #edit-form select:focus { border-color: #3b82f6; }
+  #edit-form textarea { resize: vertical; min-height: 60px; }
+  .theme-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 6px; }
+  .theme-swatch {
+    width: 100%; aspect-ratio: 1; border-radius: 6px; cursor: pointer;
+    border: 2px solid transparent; transition: transform .1s;
+  }
+  .theme-swatch:hover { transform: scale(1.1); }
+  .theme-swatch.active { border-color: #3b82f6; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+  .modal-actions button { flex: 1; padding: 9px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
+  .modal-actions .save { background: #3b82f6; color: #fff; }
+  .modal-actions .cancel { background: #f1f5f9; color: #475569; }
+  .modal-actions button:hover { filter: brightness(.95); }
+
+  /* ── Arrow label modal ── */
+  #label-modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    z-index: 2000; align-items: center; justify-content: center;
+  }
+  #label-modal.open { display: flex; }
+  #label-form {
+    background: #fff; border-radius: 10px; padding: 20px; width: 300px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.2);
+  }
+  #label-form h3 { font-size: 13px; font-weight: 700; margin-bottom: 12px; color: #1e293b; }
+  #label-form input { width: 100%; padding: 8px 10px; border: 1.5px solid #e2e8f0; border-radius: 7px; font-size: 13px; outline: none; }
+  #label-form input:focus { border-color: #3b82f6; }
+  .label-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .label-actions button { flex: 1; padding: 8px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; }
+  .label-actions .save   { background: #3b82f6; color: #fff; }
+  .label-actions .del    { background: #fee2e2; color: #ef4444; }
+  .label-actions .cancel { background: #f1f5f9; color: #475569; }
+
+  /* ── Help tooltip ── */
+  #help {
+    position: fixed; bottom: 88px; right: 20px;
+    background: #1e293b; color: #94a3b8; border-radius: 10px;
+    padding: 12px 14px; font-size: 11px; line-height: 1.8; z-index: 100;
+    max-width: 220px;
+  }
+  #help strong { color: #e2e8f0; }
+</style>
+</head>
+<body>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <h1>⚙ Roof CRM — Architecture</h1>
+  <div class="tb-sep"></div>
+  <button class="tb-btn secondary" onclick="setMode('select')" id="btn-select">↖ Select</button>
+  <button class="tb-btn secondary" onclick="setMode('arrow')"  id="btn-arrow">→ Arrow</button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn primary"   onclick="openAddPanel()">+ Add Block</button>
+  <button class="tb-btn secondary" onclick="exportPNG()">⬇ Export PNG</button>
+  <button class="tb-btn secondary" onclick="copyJSON()">{ } Copy JSON</button>
+  <button class="tb-btn secondary" onclick="pasteJSON()">⏫ Load JSON</button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn danger"    onclick="clearAll()">✕ Clear All</button>
+  <span id="mode-indicator">Select</span>
+</div>
+
+<!-- Canvas -->
+<div id="canvas">
+  <div id="world">
+    <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#64748b"/>
+        </marker>
+        <marker id="arrowhead-hover" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#3b82f6"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+</div>
+
+<!-- Add node bottom panel -->
+<div id="add-panel" style="display:none">
+  <span style="color:#94a3b8;font-size:11px;font-weight:600;margin-right:4px">Theme:</span>
+  <button class="tb-btn" style="background:#dbeafe;color:#1e3a5f" onclick="addNode('blue')">Blue</button>
+  <button class="tb-btn" style="background:#ede9fe;color:#4c1d95" onclick="addNode('purple')">Purple</button>
+  <button class="tb-btn" style="background:#dcfce7;color:#14532d" onclick="addNode('green')">Green</button>
+  <button class="tb-btn" style="background:#fef3c7;color:#78350f" onclick="addNode('amber')">Amber</button>
+  <button class="tb-btn" style="background:#ffedd5;color:#7c2d12" onclick="addNode('orange')">Orange</button>
+  <button class="tb-btn" style="background:#cffafe;color:#164e63" onclick="addNode('cyan')">Cyan</button>
+  <button class="tb-btn" style="background:#1e3a5f;color:#e0f2fe" onclick="addNode('navy')">Navy</button>
+  <button class="tb-btn" style="background:#f1f5f9;color:#0f172a" onclick="addNode('slate')">Slate</button>
+  <button class="tb-btn secondary" onclick="closeAddPanel()">Cancel</button>
+</div>
+
+<!-- Help -->
+<div id="help">
+  <strong>Shortcuts</strong><br>
+  <strong>Double-click</strong> block to edit<br>
+  <strong>Arrow mode</strong> → click source → click target<br>
+  <strong>Click arrow</strong> to add/edit label<br>
+  <strong>Delete key</strong> removes selected<br>
+  <strong>Scroll</strong> to zoom · <strong>drag</strong> to pan
+</div>
+
+<!-- Edit modal -->
+<div id="edit-modal">
+  <div id="edit-form">
+    <h3>Edit Block</h3>
+    <label>Title</label>
+    <input id="ef-title" type="text" placeholder="Block title" />
+    <label>Subtitle / body</label>
+    <textarea id="ef-sub" placeholder="Optional details..."></textarea>
+    <label>Badge</label>
+    <input id="ef-badge" type="text" placeholder="e.g. Entity, Stage, Exit" />
+    <label>Theme</label>
+    <div class="theme-grid" id="theme-grid"></div>
+    <div class="modal-actions">
+      <button class="cancel" onclick="closeEditModal()">Cancel</button>
+      <button class="save"   onclick="saveEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Arrow label modal -->
+<div id="label-modal">
+  <div id="label-form">
+    <h3>Arrow Label</h3>
+    <input id="lf-text" type="text" placeholder="e.g. has many, 1:N, optional..." />
+    <div class="label-actions">
+      <button class="cancel" onclick="closeLabelModal()">Cancel</button>
+      <button class="del"    onclick="deleteArrow()">Delete Arrow</button>
+      <button class="save"   onclick="saveLabel()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────
+let nodes   = [];  // { id, x, y, title, sub, badge, theme }
+let arrows  = [];  // { id, fromId, toId, label }
+let mode    = 'select';
+let selectedNode  = null;
+let selectedArrow = null;
+let arrowStart    = null;
+let editingNodeId = null;
+let editingArrowId = null;
+let _uid = 1;
+const uid = () => 'n' + (_uid++);
+const auid = () => 'a' + (_uid++);
+
+// Pan/zoom
+let panX = 0, panY = 0, zoom = 1;
+let panning = false, panStart = null;
+
+// Drag
+let dragging = null, dragOff = { x: 0, y: 0 };
+
+const THEMES = ['blue','purple','green','amber','orange','cyan','teal','red','slate','navy'];
+const THEME_BG = {
+  blue:'#dbeafe', purple:'#ede9fe', green:'#dcfce7', amber:'#fef3c7',
+  orange:'#ffedd5', cyan:'#cffafe', teal:'#ccfbf1', red:'#fee2e2',
+  slate:'#f1f5f9', navy:'#1e3a5f'
+};
+
+// ── Initial data (from ARCHITECTURE_MAP.md) ───────────────────────
+const INIT = {
+  nodes: [
+    // ─ Data model entities ─
+    { id:'customer', x:80,  y:80,  title:'Customer', badge:'Entity',
+      sub:'name, email, phone\ncompany, source', theme:'blue' },
+    { id:'property', x:320, y:80,  title:'Property',  badge:'Entity',
+      sub:'address, city, state, zip\nlat, lng', theme:'blue' },
+    { id:'job',      x:560, y:80,  title:'Job',       badge:'Entity',
+      sub:'status, category, work_type\ntrade_types', theme:'blue' },
+    { id:'structure',x:800, y:80,  title:'Structure', badge:'Entity',
+      sub:'name, pitch, squares\nlayers, waste_factor', theme:'blue' },
+
+    // ─ Job children ─
+    { id:'estimate', x:460, y:260, title:'Estimate',  badge:'Child',
+      sub:'line items, sell total, margin', theme:'purple' },
+    { id:'proposal', x:620, y:260, title:'Proposal',  badge:'Child',
+      sub:'PDF, sent_at, viewed, signed', theme:'purple' },
+    { id:'invoice',  x:780, y:260, title:'Invoice',   badge:'Child',
+      sub:'amount, due_date, paid, balance', theme:'purple' },
+    { id:'matorder', x:460, y:360, title:'Material Order', badge:'Child',
+      sub:'items, supplier, status', theme:'purple' },
+    { id:'crew',     x:620, y:360, title:'Crew Assignment', badge:'Child',
+      sub:'crew_member, trade\nscheduled_date', theme:'purple' },
+    { id:'inspection',x:780,y:360, title:'Inspection', badge:'Child',
+      sub:'type, result, inspector, date', theme:'purple' },
+    { id:'measurement',x:940,y:310,title:'Measurement',badge:'Child',
+      sub:'source, squares, pitch\nreport_url', theme:'purple' },
+
+    // ─ Pipeline stages ─
+    { id:'s0', x:80,  y:520, title:'New Lead',          badge:'Stage 0', sub:'', theme:'slate' },
+    { id:'s1', x:240, y:520, title:'Appointment Scheduled', badge:'Stage 1', sub:'', theme:'blue' },
+    { id:'s2', x:400, y:520, title:'Proposal Sent',     badge:'Stage 2', sub:'', theme:'purple' },
+    { id:'s3', x:560, y:520, title:'Proposal Signed',   badge:'Stage 3', sub:'', theme:'green' },
+    { id:'s4', x:720, y:520, title:'Pre-Production',    badge:'Stage 4', sub:'materials, permits', theme:'amber' },
+    { id:'s5', x:880, y:520, title:'Production',        badge:'Stage 5', sub:'crew on site', theme:'orange' },
+    { id:'s6', x:1040,y:520, title:'Post-Production',   badge:'Stage 6', sub:'QC, punch list', theme:'cyan' },
+    { id:'s7', x:1200,y:520, title:'Payments / Invoicing', badge:'Stage 7', sub:'invoice sent, payment collected', theme:'teal' },
+    { id:'s8', x:1360,y:520, title:'Job Completed',     badge:'Stage 8', sub:'closed, archived', theme:'green' },
+
+    // ─ Exit states ─
+    { id:'lost',        x:240, y:660, title:'Lost',        badge:'Exit', sub:'customer chose competitor', theme:'red' },
+    { id:'unqualified', x:440, y:660, title:'Unqualified', badge:'Exit', sub:'did not meet criteria',     theme:'slate' },
+    { id:'cancelled',   x:640, y:660, title:'Cancelled',   badge:'Exit', sub:'cancelled after signing',   theme:'red' },
+  ],
+  arrows: [
+    // Data model
+    { id:'a1', fromId:'customer', toId:'property',   label:'has many' },
+    { id:'a2', fromId:'property', toId:'job',         label:'has many' },
+    { id:'a3', fromId:'job',      toId:'structure',   label:'has many' },
+    // Job → children
+    { id:'a4', fromId:'job', toId:'estimate',   label:'' },
+    { id:'a5', fromId:'job', toId:'proposal',   label:'' },
+    { id:'a6', fromId:'job', toId:'invoice',    label:'' },
+    { id:'a7', fromId:'job', toId:'matorder',   label:'' },
+    { id:'a8', fromId:'job', toId:'crew',       label:'' },
+    { id:'a9', fromId:'job', toId:'inspection', label:'' },
+    { id:'a10',fromId:'job', toId:'measurement',label:'' },
+    // Pipeline
+    { id:'a11',fromId:'s0', toId:'s1', label:'' },
+    { id:'a12',fromId:'s1', toId:'s2', label:'' },
+    { id:'a13',fromId:'s2', toId:'s3', label:'' },
+    { id:'a14',fromId:'s3', toId:'s4', label:'' },
+    { id:'a15',fromId:'s4', toId:'s5', label:'' },
+    { id:'a16',fromId:'s5', toId:'s6', label:'' },
+    { id:'a17',fromId:'s6', toId:'s7', label:'' },
+    { id:'a18',fromId:'s7', toId:'s8', label:'' },
+    // Exit states (dashed)
+    { id:'a19',fromId:'s1', toId:'lost',        label:'any stage' },
+    { id:'a20',fromId:'s1', toId:'unqualified', label:'any stage' },
+    { id:'a21',fromId:'s3', toId:'cancelled',   label:'post-sign' },
+  ],
+};
+
+// ── Boot ──────────────────────────────────────────────────────────
+nodes  = INIT.nodes.map(n => ({ ...n }));
+arrows = INIT.arrows.map(a => ({ ...a }));
+_uid   = 100;
+render();
+buildThemeGrid();
+
+// ── Theme grid in modal ───────────────────────────────────────────
+function buildThemeGrid() {
+  const grid = document.getElementById('theme-grid');
+  grid.innerHTML = '';
+  THEMES.forEach(t => {
+    const sw = document.createElement('div');
+    sw.className = 'theme-swatch';
+    sw.style.background = THEME_BG[t] || '#f1f5f9';
+    sw.dataset.theme = t;
+    sw.title = t;
+    sw.onclick = () => {
+      grid.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+      sw.classList.add('active');
+    };
+    grid.appendChild(sw);
+  });
+}
+
+// ── Render ────────────────────────────────────────────────────────
+function render() {
+  const world  = document.getElementById('world');
+  const svgEl  = document.getElementById('svg-layer');
+  world.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+
+  // Remove old node elements (keep svg)
+  world.querySelectorAll('.node').forEach(el => el.remove());
+
+  // Draw nodes
+  nodes.forEach(n => {
+    const el = document.createElement('div');
+    el.className = `node theme-${n.theme}`;
+    el.id = 'node-' + n.id;
+    el.style.left = n.x + 'px';
+    el.style.top  = n.y + 'px';
+
+    if (n.badge) el.innerHTML += `<div class="node-badge">${n.badge}</div>`;
+    el.innerHTML += `<div class="node-title">${n.title}</div>`;
+    if (n.sub) el.innerHTML += `<div class="node-sub">${n.sub.replace(/\n/g,'<br>')}</div>`;
+
+    // Delete button
+    const del = document.createElement('div');
+    del.className = 'node-delete';
+    del.textContent = '×';
+    del.onclick = (e) => { e.stopPropagation(); deleteNode(n.id); };
+    el.appendChild(del);
+
+    if (n.id === selectedNode)  el.classList.add('selected');
+    if (n.id === arrowStart)    el.classList.add('arrow-start');
+
+    // Events
+    el.addEventListener('mousedown', (e) => onNodeMouseDown(e, n.id));
+    el.addEventListener('dblclick',  (e) => { e.stopPropagation(); openEditModal(n.id); });
+    el.addEventListener('click',     (e) => onNodeClick(e, n.id));
+
+    world.appendChild(el);
+  });
+
+  // Draw arrows
+  renderArrows(svgEl);
+}
+
+function renderArrows(svgEl) {
+  // Remove old arrow groups
+  svgEl.querySelectorAll('.arrow-group').forEach(el => el.remove());
+
+  arrows.forEach(a => {
+    const fromNode = nodes.find(n => n.id === a.fromId);
+    const toNode   = nodes.find(n => n.id === a.toId);
+    if (!fromNode || !toNode) return;
+
+    const fromEl = document.getElementById('node-' + a.fromId);
+    const toEl   = document.getElementById('node-' + a.toId);
+    if (!fromEl || !toEl) return;
+
+    const fw = fromEl.offsetWidth  || 160;
+    const fh = fromEl.offsetHeight || 80;
+    const tw = toEl.offsetWidth    || 160;
+    const th = toEl.offsetHeight   || 80;
+
+    const x1 = fromNode.x + fw / 2;
+    const y1 = fromNode.y + fh / 2;
+    const x2 = toNode.x   + tw / 2;
+    const y2 = toNode.y   + th / 2;
+
+    // Exit point on border
+    const { x: sx, y: sy } = borderPoint(fromNode.x, fromNode.y, fw, fh, x2, y2);
+    const { x: ex, y: ey } = borderPoint(toNode.x,   toNode.y,   tw, th, x1, y1);
+
+    const isExit = ['lost','unqualified','cancelled'].includes(a.toId);
+    const color  = a.id === selectedArrow ? '#3b82f6' : '#64748b';
+    const dash   = isExit ? '6 4' : 'none';
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.classList.add('arrow-group');
+    g.dataset.arrowId = a.id;
+
+    // Visible line
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', sx); line.setAttribute('y1', sy);
+    line.setAttribute('x2', ex); line.setAttribute('y2', ey);
+    line.setAttribute('stroke', color);
+    line.setAttribute('stroke-dasharray', dash);
+    line.setAttribute('class', 'arrow-line' + (a.id === selectedArrow ? ' selected-arrow' : ''));
+    line.setAttribute('marker-end', a.id === selectedArrow ? 'url(#arrowhead-hover)' : 'url(#arrowhead)');
+
+    // Hit area
+    const hit = document.createElementNS('http://www.w3.org/2000/svg','line');
+    hit.setAttribute('x1', sx); hit.setAttribute('y1', sy);
+    hit.setAttribute('x2', ex); hit.setAttribute('y2', ey);
+    hit.setAttribute('class', 'arrow-hit');
+    hit.style.pointerEvents = 'all';
+    hit.addEventListener('click', (e) => { e.stopPropagation(); onArrowClick(a.id); });
+
+    g.appendChild(line);
+    g.appendChild(hit);
+
+    // Label
+    if (a.label) {
+      const mx = (sx + ex) / 2;
+      const my = (sy + ey) / 2;
+      const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      bg.setAttribute('x', mx - 30); bg.setAttribute('y', my - 9);
+      bg.setAttribute('width', 60);  bg.setAttribute('height', 16);
+      bg.setAttribute('fill','#fff');
+      bg.setAttribute('rx','3');
+      const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x', mx); txt.setAttribute('y', my + 3);
+      txt.setAttribute('text-anchor','middle');
+      txt.setAttribute('class','arrow-label-text');
+      txt.textContent = a.label;
+      g.appendChild(bg);
+      g.appendChild(txt);
+    }
+
+    svgEl.appendChild(g);
+  });
+}
+
+function borderPoint(nx, ny, nw, nh, tx, ty) {
+  const cx = nx + nw / 2, cy = ny + nh / 2;
+  const dx = tx - cx, dy = ty - cy;
+  const absDx = Math.abs(dx), absDy = Math.abs(dy);
+  if (absDx === 0 && absDy === 0) return { x: cx, y: cy };
+  const scaleX = absDx > 0 ? (nw / 2) / absDx : Infinity;
+  const scaleY = absDy > 0 ? (nh / 2) / absDy : Infinity;
+  const scale  = Math.min(scaleX, scaleY);
+  return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+// ── Node interactions ──────────────────────────────────────────────
+function onNodeClick(e, id) {
+  e.stopPropagation();
+  if (mode === 'arrow') {
+    if (!arrowStart) {
+      arrowStart = id;
+    } else if (arrowStart !== id) {
+      arrows.push({ id: auid(), fromId: arrowStart, toId: id, label: '' });
+      arrowStart = null;
+    } else {
+      arrowStart = null;
+    }
+    render();
+    return;
+  }
+  selectedNode  = id;
+  selectedArrow = null;
+  render();
+}
+
+function onNodeMouseDown(e, id) {
+  if (mode === 'arrow') return;
+  if (e.button !== 0) return;
+  e.stopPropagation();
+
+  const node = nodes.find(n => n.id === id);
+  if (!node) return;
+
+  const worldRect = document.getElementById('world').getBoundingClientRect();
+  dragOff = {
+    x: (e.clientX - worldRect.left) / zoom - node.x,
+    y: (e.clientY - worldRect.top)  / zoom - node.y,
+  };
+  dragging = id;
+
+  const onMove = (ev) => {
+    if (!dragging) return;
+    const wr = document.getElementById('world').getBoundingClientRect();
+    node.x = (ev.clientX - wr.left) / zoom - dragOff.x;
+    node.y = (ev.clientY - wr.top)  / zoom - dragOff.y;
+    render();
+  };
+  const onUp = () => {
+    dragging = null;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+}
+
+// ── Arrow interactions ─────────────────────────────────────────────
+function onArrowClick(id) {
+  if (mode === 'arrow') return;
+  selectedArrow = id;
+  selectedNode  = null;
+  editingArrowId = id;
+  const a = arrows.find(a => a.id === id);
+  document.getElementById('lf-text').value = a?.label || '';
+  document.getElementById('label-modal').classList.add('open');
+  render();
+}
+
+// ── Mode ───────────────────────────────────────────────────────────
+function setMode(m) {
+  mode = m;
+  arrowStart = null;
+  const svgEl = document.getElementById('svg-layer');
+  svgEl.classList.toggle('arrow-mode', m === 'arrow');
+  document.getElementById('mode-indicator').textContent = m === 'arrow' ? '→ Arrow mode: click source…' : 'Select';
+  document.getElementById('mode-indicator').classList.toggle('arrow-mode', m === 'arrow');
+  document.getElementById('btn-select').style.background = m === 'select' ? '#3b82f6' : '';
+  document.getElementById('btn-select').style.color      = m === 'select' ? '#fff'     : '';
+  document.getElementById('btn-arrow').style.background  = m === 'arrow'  ? '#fbbf24' : '';
+  document.getElementById('btn-arrow').style.color       = m === 'arrow'  ? '#000'    : '';
+  render();
+}
+
+// ── Add node ───────────────────────────────────────────────────────
+function openAddPanel()  { document.getElementById('add-panel').style.display = 'flex'; }
+function closeAddPanel() { document.getElementById('add-panel').style.display = 'none'; }
+
+function addNode(theme) {
+  const id = uid();
+  nodes.push({ id, x: 200 + Math.random()*200, y: 200 + Math.random()*100,
+    title: 'New Block', sub: '', badge: '', theme });
+  closeAddPanel();
+  render();
+  selectedNode = id;
+  openEditModal(id);
+}
+
+// ── Delete ─────────────────────────────────────────────────────────
+function deleteNode(id) {
+  nodes  = nodes.filter(n => n.id !== id);
+  arrows = arrows.filter(a => a.fromId !== id && a.toId !== id);
+  if (selectedNode === id) selectedNode = null;
+  render();
+}
+
+function deleteArrow() {
+  arrows = arrows.filter(a => a.id !== editingArrowId);
+  selectedArrow  = null;
+  editingArrowId = null;
+  closeLabelModal();
+  render();
+}
+
+function clearAll() {
+  if (!confirm('Clear everything?')) return;
+  nodes = []; arrows = []; render();
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNode) {
+    deleteNode(selectedNode);
+  }
+  if (e.key === 'Escape') {
+    setMode('select');
+    selectedNode = selectedArrow = null;
+    render();
+  }
+});
+
+// ── Edit modal ─────────────────────────────────────────────────────
+function openEditModal(id) {
+  editingNodeId = id;
+  const n = nodes.find(n => n.id === id);
+  if (!n) return;
+  document.getElementById('ef-title').value = n.title || '';
+  document.getElementById('ef-sub').value   = n.sub   || '';
+  document.getElementById('ef-badge').value = n.badge || '';
+  // Activate theme swatch
+  document.querySelectorAll('.theme-swatch').forEach(sw => {
+    sw.classList.toggle('active', sw.dataset.theme === n.theme);
+  });
+  document.getElementById('edit-modal').classList.add('open');
+  setTimeout(() => document.getElementById('ef-title').focus(), 50);
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+  editingNodeId = null;
+}
+
+function saveEdit() {
+  const n = nodes.find(n => n.id === editingNodeId);
+  if (!n) return;
+  n.title = document.getElementById('ef-title').value.trim() || 'Block';
+  n.sub   = document.getElementById('ef-sub').value.trim();
+  n.badge = document.getElementById('ef-badge').value.trim();
+  const active = document.querySelector('.theme-swatch.active');
+  if (active) n.theme = active.dataset.theme;
+  closeEditModal();
+  render();
+}
+
+// ── Label modal ────────────────────────────────────────────────────
+function closeLabelModal() {
+  document.getElementById('label-modal').classList.remove('open');
+  editingArrowId = null;
+}
+
+function saveLabel() {
+  const a = arrows.find(a => a.id === editingArrowId);
+  if (a) a.label = document.getElementById('lf-text').value.trim();
+  closeLabelModal();
+  render();
+}
+
+// ── Pan / zoom ─────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.target !== canvas && e.target !== document.getElementById('world') &&
+      e.target !== document.getElementById('svg-layer')) return;
+  if (e.button === 0 || e.button === 1) {
+    panning = true;
+    panStart = { x: e.clientX - panX, y: e.clientY - panY };
+    selectedNode = selectedArrow = null;
+    render();
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!panning) return;
+  panX = e.clientX - panStart.x;
+  panY = e.clientY - panStart.y;
+  document.getElementById('world').style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+});
+
+document.addEventListener('mouseup', () => { panning = false; });
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  const newZoom = Math.max(0.2, Math.min(3, zoom * delta));
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  panX = mx - (mx - panX) * (newZoom / zoom);
+  panY = my - (my - panY) * (newZoom / zoom);
+  zoom = newZoom;
+  document.getElementById('world').style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+}, { passive: false });
+
+// Close modals on background click
+document.getElementById('edit-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('edit-modal')) closeEditModal();
+});
+document.getElementById('label-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('label-modal')) closeLabelModal();
+});
+
+// ── Export PNG ────────────────────────────────────────────────────
+function exportPNG() {
+  // Use html2canvas approach via offscreen canvas
+  alert('To export as PNG:\n1. Press Cmd+Shift+4 (Mac) or use browser screenshot\n2. Or use File → Print → Save as PDF in your browser\n\nTip: Press Cmd+- to zoom out first so everything fits.');
+}
+
+// ── JSON import/export ─────────────────────────────────────────────
+function copyJSON() {
+  const data = JSON.stringify({ nodes, arrows }, null, 2);
+  navigator.clipboard.writeText(data).then(() => alert('JSON copied to clipboard!'));
+}
+
+function pasteJSON() {
+  const raw = prompt('Paste JSON:');
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    nodes  = data.nodes  || [];
+    arrows = data.arrows || [];
+    render();
+  } catch(e) { alert('Invalid JSON'); }
+}
+
+// Enter key in modals
+document.getElementById('ef-title').addEventListener('keydown', e => { if (e.key === 'Enter') saveEdit(); });
+document.getElementById('lf-text').addEventListener('keydown',  e => { if (e.key === 'Enter') saveLabel(); });
+</script>
+</body>
+</html>
