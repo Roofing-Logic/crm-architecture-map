@@ -228,7 +228,9 @@
   <button class="tb-btn secondary" onclick="pasteJSON()">⏫ Load JSON</button>
   <div class="tb-sep"></div>
   <button class="tb-btn danger"    onclick="clearAll()">✕ Clear All</button>
+  <button class="tb-btn secondary" onclick="resetToDefault()">↺ Reset</button>
   <span id="mode-indicator">Select</span>
+  <span id="save-indicator" style="font-size:11px;color:#64748b;margin-left:4px">Auto-save on</span>
 </div>
 
 <!-- Canvas -->
@@ -405,10 +407,48 @@ const INIT = {
   ],
 };
 
+// ── Persistence ───────────────────────────────────────────────────
+const SAVE_KEY = 'rl-arch-diagram';
+let saveTimer = null;
+
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ nodes, arrows, _uid }));
+    const ind = document.getElementById('save-indicator');
+    if (ind) { ind.textContent = '✓ Saved'; ind.style.color = '#22c55e'; setTimeout(() => { ind.textContent = 'Auto-save on'; ind.style.color = ''; }, 1500); }
+  }, 600);
+}
+
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data.nodes?.length) return false;
+    nodes  = data.nodes;
+    arrows = data.arrows || [];
+    _uid   = data._uid   || 200;
+    return true;
+  } catch { return false; }
+}
+
+function resetToDefault() {
+  if (!confirm('Reset to the default diagram? This will clear your saved changes.')) return;
+  localStorage.removeItem(SAVE_KEY);
+  nodes  = INIT.nodes.map(n => ({ ...n }));
+  arrows = INIT.arrows.map(a => ({ ...a }));
+  _uid   = 100;
+  render();
+}
+
 // ── Boot ──────────────────────────────────────────────────────────
-nodes  = INIT.nodes.map(n => ({ ...n }));
-arrows = INIT.arrows.map(a => ({ ...a }));
-_uid   = 100;
+const hasSaved = loadSaved();
+if (!hasSaved) {
+  nodes  = INIT.nodes.map(n => ({ ...n }));
+  arrows = INIT.arrows.map(a => ({ ...a }));
+  _uid   = 100;
+}
 render();
 buildThemeGrid();
 
@@ -570,6 +610,7 @@ function onNodeClick(e, id) {
     } else if (arrowStart !== id) {
       arrows.push({ id: auid(), fromId: arrowStart, toId: id, label: '' });
       arrowStart = null;
+      save();
     } else {
       arrowStart = null;
     }
@@ -604,6 +645,7 @@ function onNodeMouseDown(e, id) {
     render();
   };
   const onUp = () => {
+    if (dragging) save();
     dragging = null;
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup',   onUp);
@@ -658,7 +700,7 @@ function deleteNode(id) {
   nodes  = nodes.filter(n => n.id !== id);
   arrows = arrows.filter(a => a.fromId !== id && a.toId !== id);
   if (selectedNode === id) selectedNode = null;
-  render();
+  render(); save();
 }
 
 function deleteArrow() {
@@ -666,12 +708,12 @@ function deleteArrow() {
   selectedArrow  = null;
   editingArrowId = null;
   closeLabelModal();
-  render();
+  render(); save();
 }
 
 function clearAll() {
   if (!confirm('Clear everything?')) return;
-  nodes = []; arrows = []; render();
+  nodes = []; arrows = []; render(); save();
 }
 
 // ── Keyboard ───────────────────────────────────────────────────────
@@ -717,7 +759,7 @@ function saveEdit() {
   const active = document.querySelector('.theme-swatch.active');
   if (active) n.theme = active.dataset.theme;
   closeEditModal();
-  render();
+  render(); save();
 }
 
 // ── Label modal ────────────────────────────────────────────────────
@@ -730,7 +772,7 @@ function saveLabel() {
   const a = arrows.find(a => a.id === editingArrowId);
   if (a) a.label = document.getElementById('lf-text').value.trim();
   closeLabelModal();
-  render();
+  render(); save();
 }
 
 // ── Pan / zoom ─────────────────────────────────────────────────────
